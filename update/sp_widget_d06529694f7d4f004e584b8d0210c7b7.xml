@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <record_update table="sp_widget">
     <sp_widget action="INSERT_OR_UPDATE">
-        <client_script><![CDATA[function($scope,$rootScope) {
+        <category/>
+        <client_script><![CDATA[//dependencies are added as parameters
+function($scope,$rootScope,spModal,spUtil,$interval) {
 	/* widget controller */
 	var c = this;
-
+	c.data.temp = {};
+	//anytime selectNote is emitted from a widget with angular, run this
+	
 	$rootScope.$on('selectNote', function(event,data) {
+		//show the note-body-widget just in case it is hidden
+		document.getElementById("note-body-widget").style.visibility = "visible";
 		c.server.get({
 			action: 'getNote',
 			noteID: $rootScope.noteID
@@ -13,10 +19,43 @@
 			c.data.title = r.data.note.title;
 			c.data.note = r.data.note.note;
 			c.data.noteID = r.data.note.sys_id;
+			// save original data, hopefully not before the promise made above
+			$interval(function() {
+      	c.saveOrigData();
+    }, 0.01);
 		});
 	});
-
-	c.updateNote = function(updateType) {
+	
+	c.confirmUpdate = function(){
+     spModal.confirm("Are you sure you want to update this Note record?").then(function(confirmed){
+       if(confirmed){
+				 c.updateNote();
+       }
+     });
+   }
+	
+	c.cancelChanges = function() {
+		$interval(function() {
+      c.data.title = c.data.temp.title;
+			c.data.note = c.data.temp.note;
+    }, 0.01);
+		//c.data.title = c.data.temp.title;
+		//c.data.note = c.data.temp.note;
+		//apply changes immediately
+		//$scope.$apply();
+	}
+	
+	
+	c.saveOrigData = function(){
+		c.data.temp.title = c.data.title;
+		c.data.temp.note =  c.data.note;
+		//$scope.$apply();
+	}
+	
+	// not using this anymore:
+	// ng-change="c.updateNote('body')"
+	c.updateNote = function() {
+		c.saveOrigData();		
 		c.server.get({
 			action: 'updateNote',
 			noteID: c.data.noteID,
@@ -24,20 +63,35 @@
 			noteTitle: c.data.title
 		}).then(function(r) {
 			// When the promise is returned, emit the change
-			if (updateType == 'title' || updateType == 'body') { 
-				$rootScope.$emit('updateTitle', r.data); 
-			}
-		});
+			console.log('data variable from server='+r.data)
+			spUtil.addTrivialMessage("The" + c.data.title + "(" + r.data.number +") record has been updated.");
+				$rootScope.$emit('updateNote', r.data); 
+		})
 	}
+	
+	c.confirmDelete = function(){
+     spModal.confirm("Are you sure you want to delete this Note record?").then(function(confirmed){
+       if(confirmed){
+       	c.deleteNote();
+       }
+     });
+   }
+	
 	c.deleteNote = function() {
 		c.server.get({
 			action: 'deleteNote',
 			noteID: c.data.noteID
 		}).then(function(r) {
-			$rootScope.$emit('deleteNote', c.data.noteID);
-			c.data.title = '';
-			c.data.note = '';
-			c.data.noteID = '';
+			if (r.data.note.number != null){//this does nothing but you cant press this if it's hidden :)
+				spUtil.addTrivialMessage("The" + c.data.title + "(" + r.data.note.number +") record has been deleted.");
+				$rootScope.$emit('deleteNote', c.data.noteID);
+				c.data.title = '';
+				c.data.note = '';
+				c.data.noteID = '';
+			}else{
+				spUtil.addTrivialMessage("Note no longer exists");
+			}
+			
 		});
 	}
 }
@@ -67,21 +121,30 @@
 		if (note.get(input.noteID)) {
 			if (input.action == 'getNote') {
 				data.note = {};
+				//param: data to send, gliderecord, fields delim by ','
 				$sp.getRecordValues(data.note, note, "title, note, sys_id");
 			}
-			else if (input.action == 'updateNote') { 
+			else if (input.action == 'updateNote') { 	
 				note.title = input.noteTitle; 
 				note.note = input.noteBody; 
+				
 				note.update(); 
 				// Need to update the data object with the new title
 				// and first 20 characters of the note (do not want to write huge
 				// strings to the Notes List widget)
 				data.title = note.getValue('title');
 				data.note = note.getValue('note').slice(0,20);
+				data.number = note.getValue('number');
 			}
 
-			else if (input.action == 'deleteNote') { 
-				note.deleteRecord(); 
+			else if (input.action == 'deleteNote') {
+				if (note.get(input.noteID)){
+					data.note = {};
+					//param: data to send, gliderecord, fields delim by ','
+					$sp.getRecordValues(data.note, note, "number");
+					note.deleteRecord(); 
+				}
+				
 			}
 		}
 	}
@@ -91,29 +154,39 @@
         <sys_created_by>admin</sys_created_by>
         <sys_created_on>2017-10-14 01:17:32</sys_created_on>
         <sys_id>d06529694f7d4f004e584b8d0210c7b7</sys_id>
-        <sys_mod_count>35</sys_mod_count>
+        <sys_mod_count>101</sys_mod_count>
         <sys_name>Notes Body</sys_name>
         <sys_package display_value="CreateNotes" source="x_snc_createnotes">df5fd9a5090232007f44e1046c8ff69f</sys_package>
         <sys_policy/>
         <sys_scope display_value="CreateNotes">df5fd9a5090232007f44e1046c8ff69f</sys_scope>
         <sys_update_name>sp_widget_d06529694f7d4f004e584b8d0210c7b7</sys_update_name>
         <sys_updated_by>admin</sys_updated_by>
-        <sys_updated_on>2017-11-15 20:02:50</sys_updated_on>
-        <template><![CDATA[<div class="panel panel-default" ng-show="c.data.noteID">
+        <sys_updated_on>2018-03-01 02:05:55</sys_updated_on>
+        <template><![CDATA[<div id="note-body-widget" class="panel panel-default" ng-show="c.data.noteID">
   <div class="panel-heading clearfix">
     <div class="row">
-      <div class="col-md-11">
-        <input class="form-control" id="note-title" ng-model="c.data.title" ng-change="c.updateNote('title')" ng-model-options="{debounce: 1000}"/>
+      <div class="col-md-9">
+        <input class="form-control" id="note-title" ng-model="c.data.title" ng-model-options="{debounce: 1000}"/>
       </div>
       <div class="col-md-1"> 
-        <button class="btn btn-danger pull-right" ng-click="c.deleteNote()"> 
+        <button class="btn btn-success pull-right" ng-click="c.confirmUpdate()"> 
+          <span class="glyphicon glyphicon-save"></span> 
+        </button> 
+      </div>
+      <div class="col-md-1"> 
+        <button class="btn btn-default pull-right" ng-click="c.cancelChanges()"> 
+          <span class="glyphicon glyphicon-refresh"></span> 
+        </button> 
+      </div>
+      <div class="col-md-1"> 
+        <button class="btn btn-danger pull-right" ng-click="c.confirmDelete()"> 
           <span class="glyphicon glyphicon-trash"></span> 
         </button> 
       </div>
     </div>
   </div>
   <div class="panel-body">
-    <textarea class="form-control" id="note-body" ng-model="c.data.note" ng-change="c.updateNote('body')" ng-model-options="{debounce: 1000}" ></textarea>
+    <textarea class="form-control" id="note-body" ng-model="c.data.note"  ng-model-options="{debounce: 1000}" ></textarea>
   </div>
 </div>]]></template>
     </sp_widget>
